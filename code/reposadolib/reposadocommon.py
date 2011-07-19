@@ -41,17 +41,23 @@ Created by Greg Neagle on 2011-03-03.
 
 import sys
 import os
+import imp
 import plistlib
 import urlparse
 import warnings
 from xml.parsers.expat import ExpatError
 
+def get_main_dir():
+    '''Returns the directory name of the script or the directory name of the exe if py2exe was used
+    Code from http://www.py2exe.org/index.cgi/HowToDetermineIfRunningFromExe
+    '''
+    if (hasattr(sys, "frozen") or hasattr(sys, "importers") or imp.is_frozen("__main__")):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(sys.argv[0])
 
 def prefsFilePath():
     '''Returns path to our preferences file.'''
-    mydir = os.path.dirname(os.path.abspath(__file__))
-    parentdir = os.path.dirname(mydir)
-    return os.path.join(parentdir, 'preferences.plist')
+    return os.path.join(get_main_dir(), 'preferences.plist')
 
 
 def pref(prefname):
@@ -79,14 +85,16 @@ def validPreferences():
     '''Validates our preferences to make sure needed values are defined
     and paths exist. Returns boolean.'''
     prefs_valid = True
-    if not pref('UpdatesRootDir'):
-        print_stderr('ERROR: UpdatesRootDir is not defined in %s.',
-                        prefsFilePath())
-        prefs_valid = False
-    if not pref('UpdatesMetadataDir'):
-        print_stderr('ERROR: UpdatesMetadataDir is not defined in %s.',
-                        prefsFilePath())
-        prefs_valid = False
+    for pref_name in ['UpdatesRootDir',  'UpdatesMetadataDir']:
+        preference = pref(pref_name)
+        if not preference:
+            print_stderr('ERROR: %s is not defined in %s.' %
+                            (pref_name, prefsFilePath()))
+            prefs_valid = False
+        elif not os.path.exists(preference):
+             print_stderr('WARNING: %s "%s" does not exist.'
+                          ' Will attempt to create it.' %
+                          (pref_name, preference))
     return prefs_valid
 
 
@@ -123,6 +131,9 @@ def configure_prefs():
         plistlib.writePlist(prefs, prefspath)
     except (IOError, ExpatError):
         print_stderr('Could not save configuration to %s', prefspath)
+    else:
+        # check to make sure they're valid
+        unused_value = validPreferences()
 
 
 def str_to_ascii(s):
@@ -141,6 +152,7 @@ def str_to_ascii(s):
 
 def concat_message(msg, *args):
     """Concatenates a string with any additional arguments; drops unicode."""
+    msg = str_to_ascii(msg)
     if args:
         args = [str_to_ascii(arg) for arg in args]
         try:
@@ -318,7 +330,7 @@ def writeBranchCatalogs(localcatalogpath):
                 # First check to see if this product was ever in this
                 # catalog
                 original_catalogs = product_info[product_key].get(
-                    'OriginalAppleCatalogs',[])
+                    'OriginalAppleCatalogs', [])
                 for original_catalog in original_catalogs:
                     if original_catalog.endswith(localcatalogname):
                         # this item was originally in this catalog, so
